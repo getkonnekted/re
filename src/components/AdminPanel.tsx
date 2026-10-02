@@ -39,7 +39,7 @@ import {
   Clock
 } from 'lucide-react';
 import { User, INVESTMENT_PLANS } from '../types';
-import { FULL_SUPABASE_SQL } from '../data/supabaseSql';
+import { FULL_SUPABASE_SQL, SUPABASE_CORE_SQL } from '../data/supabaseSql';
 import { PmLogo } from './PmLogo';
 import { LiveReserveCounter } from './LiveReserveCounter';
 
@@ -95,13 +95,15 @@ export const AdminPanel: React.FC = () => {
   const [dbSaveNotice, setDbSaveNotice] = useState<string | null>(null);
   const [showSqlScriptModal, setShowSqlScriptModal] = useState(false);
   const [sqlCopied, setSqlCopied] = useState(false);
+  const [selectedSqlTab, setSelectedSqlTab] = useState<'core' | 'full'>('core');
 
   const handleCopySql = () => {
+    const textToCopy = selectedSqlTab === 'core' ? SUPABASE_CORE_SQL : FULL_SUPABASE_SQL;
     if (navigator?.clipboard?.writeText) {
-      navigator.clipboard.writeText(FULL_SUPABASE_SQL);
+      navigator.clipboard.writeText(textToCopy);
     } else {
       const textarea = document.createElement('textarea');
-      textarea.value = FULL_SUPABASE_SQL;
+      textarea.value = textToCopy;
       document.body.appendChild(textarea);
       textarea.select();
       document.execCommand('copy');
@@ -2662,20 +2664,20 @@ export const AdminPanel: React.FC = () => {
       {showSqlScriptModal && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn">
           <div className="bg-slate-900 text-white border border-slate-800 rounded-2xl max-w-4xl w-full p-6 shadow-2xl animate-scaleIn max-h-[92vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-3">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-emerald-400">
                   <Code2 className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    Complete Supabase SQL Script
+                    Supabase Production SQL Scripts
                     <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30">
-                      LIVE PRODUCTION READY
+                      LIVE READY
                     </span>
                   </h3>
                   <p className="text-[11px] text-slate-400">
-                    Syncs all user & admin build functions, tables, ledger audit, and realtime replication.
+                    Choose Part 1 (320 lines, runs within Supabase limits) or Full Enterprise SQL.
                   </p>
                 </div>
               </div>
@@ -2688,11 +2690,38 @@ export const AdminPanel: React.FC = () => {
               </button>
             </div>
 
+            {/* Script Selection Tabs */}
+            <div className="flex items-center gap-2 mb-3 bg-slate-950 p-1 rounded-xl border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setSelectedSqlTab('core')}
+                className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  selectedSqlTab === 'core'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span>Part 1: Core Database & Live Sync (320 Lines - RECOMMENDED)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedSqlTab('full')}
+                className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  selectedSqlTab === 'full'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                }`}
+              >
+                <span>Part 2: Full Enterprise SQL (With Stored Functions)</span>
+              </button>
+            </div>
+
             {/* Quick 3-Step Guide */}
-            <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-3.5 mb-4 text-xs text-slate-300 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-3 mb-3 text-xs text-slate-300 grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="flex items-start gap-2">
                 <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-[11px] shrink-0 font-mono">1</span>
-                <span>Copy the full SQL script using the button below.</span>
+                <span>Copy <strong>{selectedSqlTab === 'core' ? 'Part 1 (320 lines)' : 'Full SQL'}</strong> with button below.</span>
               </div>
               <div className="flex items-start gap-2">
                 <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-[11px] shrink-0 font-mono">2</span>
@@ -2725,20 +2754,22 @@ export const AdminPanel: React.FC = () => {
                   ) : (
                     <>
                       <Copy className="w-4 h-4" />
-                      <span>Copy Full SQL Script</span>
+                      <span>Copy {selectedSqlTab === 'core' ? 'Part 1 SQL (320 Lines)' : 'Full Script'}</span>
                     </>
                   )}
                 </button>
               </div>
 
-              <pre className="h-full max-h-[50vh] overflow-y-auto p-4 text-slate-300 leading-relaxed select-all">
-                <code>{FULL_SUPABASE_SQL}</code>
+              <pre className="h-full max-h-[46vh] overflow-y-auto p-4 text-slate-300 leading-relaxed select-all">
+                <code>{selectedSqlTab === 'core' ? SUPABASE_CORE_SQL : FULL_SUPABASE_SQL}</code>
               </pre>
             </div>
 
-            <div className="flex items-center justify-between gap-3 pt-4 border-t border-slate-800 mt-4">
+            <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-800 mt-3">
               <span className="text-[11px] text-slate-400 font-mono">
-                File: <strong className="text-slate-200">/supabase_schema.sql</strong> • Includes 24 stored functions & triggers
+                {selectedSqlTab === 'core' 
+                  ? 'Part 1: 320 lines • All 10 tables, default plans, settings, admin seed, and realtime sync.' 
+                  : 'Full Script: 1,878 lines • Includes 24 stored functions & triggers.'}
               </span>
               <div className="flex items-center gap-2">
                 <button
@@ -2747,7 +2778,7 @@ export const AdminPanel: React.FC = () => {
                   className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
                 >
                   <Copy className="w-3.5 h-3.5" />
-                  <span>{sqlCopied ? 'Copied!' : 'Copy Script'}</span>
+                  <span>{sqlCopied ? 'Copied!' : selectedSqlTab === 'core' ? 'Copy Part 1 (320 Lines)' : 'Copy Full'}</span>
                 </button>
                 <button
                   type="button"

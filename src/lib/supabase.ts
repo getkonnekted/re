@@ -2,8 +2,8 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { User, UserInvestment, Transaction, SystemSettings, TaskSubmission, UserDailyProgress } from '../types';
 
 export const getSupabaseConfig = () => {
-  const envUrl = (import.meta as any).env.VITE_SUPABASE_URL || '';
-  const envKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY || '';
+  const envUrl = (import.meta as any).env.VITE_SUPABASE_URL || (import.meta as any).env.SUPABASE_URL || '';
+  const envKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY || (import.meta as any).env.SUPABASE_ANON_KEY || '';
 
   const localUrl = typeof window !== 'undefined' ? localStorage.getItem('pm_supabase_url') || '' : '';
   const localKey = typeof window !== 'undefined' ? localStorage.getItem('pm_supabase_anon_key') || '' : '';

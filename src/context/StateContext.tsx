@@ -21,7 +21,8 @@ import {
   recordWalletAuditToSupabase,
   subscribeToSupabaseRealtime,
   getSupabaseConfig,
-  saveSupabaseCredentials
+  saveSupabaseCredentials,
+  getSupabaseClient
 } from '../lib/supabase';
 
 interface StateContextType {
@@ -52,7 +53,7 @@ interface StateContextType {
   
   // Auth actions
   register: (name: string, email: string, referredByCode?: string, password?: string, phone?: string) => boolean;
-  login: (email: string, password?: string) => boolean;
+  login: (email: string, password?: string) => Promise<boolean> | boolean;
   requestPasswordReset: (email: string) => { success: boolean; code?: string; message: string };
   confirmPasswordReset: (email: string, code: string, newPassword: string) => boolean;
   logout: () => void;
@@ -129,21 +130,44 @@ interface StateContextType {
 
 const StateContext = createContext<StateContextType | undefined>(undefined);
 
-export const ADMIN_EMAIL = (import.meta as any).env.VITE_ADMIN_EMAIL || 'admin@treasurehomes.com';
-const ADMIN_PASSWORD = (import.meta as any).env.VITE_ADMIN_PASSWORD || 'admin123';
+export const getEnvAdminEmail = (): string => {
+  return (
+    (import.meta as any).env?.VITE_ADMIN_EMAIL ||
+    (import.meta as any).env?.ADMIN_EMAIL ||
+    ''
+  ).toLowerCase().trim();
+};
 
-const getSeedUsers = (): User[] => [
-  {
-    id: 'usr_admin',
-    name: 'Treasure Homes Admin',
-    email: ADMIN_EMAIL.toLowerCase().trim(),
-    referralCode: 'TREASURE_ADMIN',
-    walletBalance: 0,
-    kycStatus: 'verified',
-    role: 'admin',
-    createdAt: new Date().toISOString()
+export const getEnvAdminPassword = (): string => {
+  return (
+    (import.meta as any).env?.VITE_ADMIN_PASSWORD ||
+    (import.meta as any).env?.ADMIN_PASSWORD ||
+    ''
+  );
+};
+
+export const ADMIN_EMAIL = getEnvAdminEmail();
+
+// Initial users: Empty unless configured via Vercel env, ensuring Supabase and Vercel manage users completely
+const getSeedUsers = (): User[] => {
+  const envEmail = getEnvAdminEmail();
+  if (envEmail) {
+    return [
+      {
+        id: 'usr_admin',
+        name: 'Administrator',
+        email: envEmail,
+        phone: '+2348000000000',
+        referralCode: 'ADMIN_PROD',
+        walletBalance: 0,
+        kycStatus: 'verified',
+        role: 'admin',
+        createdAt: new Date().toISOString()
+      }
+    ];
   }
-];
+  return [];
+};
 
 const SEED_INVESTMENTS: UserInvestment[] = [];
 
@@ -213,20 +237,10 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [users, setUsers] = useState<User[]>(() => {
     const saved = localStorage.getItem('pm_prod_users_v1');
     const parsed = saved ? JSON.parse(saved) : null;
-    const defaultSeed = getSeedUsers();
-    
-    if (!parsed) return defaultSeed;
-
-    // Dynamically update existing seeded admin in case user updated VITE_ADMIN_EMAIL
-    const adminIndex = parsed.findIndex((u: any) => u.id === 'usr_admin' || u.role === 'admin');
-    if (adminIndex > -1) {
-      parsed[adminIndex].email = ADMIN_EMAIL.toLowerCase().trim();
-    } else {
-      parsed.push(defaultSeed[0]);
+    if (parsed && Array.isArray(parsed)) {
+      return parsed.filter((u: any) => u.id !== 'usr_demo_investor');
     }
-
-    // Clean out any stale demo user from production storage
-    return parsed.filter((u: any) => u.id !== 'usr_demo_investor');
+    return getSeedUsers();
   });
 
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -425,25 +439,15 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setLastSyncedAt(new Date().toLocaleTimeString());
           
           if (dbData.users.length === 0) {
-            console.log('Seeding Supabase with initial admin...');
             const defaultSeed = getSeedUsers();
-            await syncMultipleUsersToSupabase(defaultSeed);
-            setUsers(defaultSeed);
+            if (defaultSeed.length > 0) {
+              await syncMultipleUsersToSupabase(defaultSeed);
+              setUsers(defaultSeed);
+            }
             await syncSettingsToSupabase(settings);
             await syncWeekToSupabase(currentWeek);
           } else {
-            const loadedUsers = [...dbData.users];
-            const defaultSeed = getSeedUsers();
-
-            const adminIndex = loadedUsers.findIndex((u: any) => u.id === 'usr_admin' || u.role === 'admin');
-            if (adminIndex > -1) {
-              loadedUsers[adminIndex].email = ADMIN_EMAIL.toLowerCase().trim();
-            } else {
-              loadedUsers.push(defaultSeed[0]);
-            }
-
-            const sanitizedUsers = loadedUsers.filter((u: any) => u.id !== 'usr_demo_investor');
-
+            const sanitizedUsers = dbData.users.filter((u: any) => u.id !== 'usr_demo_investor');
             setUsers(sanitizedUsers);
             setInvestments(dbData.investments);
             setTransactions(dbData.transactions);
@@ -464,7 +468,7 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             if (savedUser) {
               try {
                 const parsed = JSON.parse(savedUser);
-                const freshUser = loadedUsers.find(u => u.id === parsed.id);
+                const freshUser = sanitizedUsers.find(u => u.id === parsed.id);
                 if (freshUser) {
                   setCurrentUser(freshUser);
                 }
@@ -694,7 +698,7 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return true;
   };
 
-  const login = (email: string, password?: string): boolean => {
+  const login = async (email: string, password?: string): Promise<boolean> => {
     clearMessages();
     const normEmail = email.toLowerCase().trim();
 
@@ -702,20 +706,80 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setErrorMsg('Please enter your email address to sign in.');
       return false;
     }
-    
-    // If admin email, verify password
-    if (normEmail === ADMIN_EMAIL.toLowerCase().trim()) {
-      if (!password) {
-        setErrorMsg('Administrator password is required.');
-        return false;
-      }
-      if (password !== ADMIN_PASSWORD) {
+
+    if (!password) {
+      setErrorMsg('Please enter your account password.');
+      return false;
+    }
+
+    const envAdminEmail = getEnvAdminEmail();
+    const envAdminPassword = getEnvAdminPassword();
+
+    // 1. Managed via Vercel Environment Variables (VITE_ADMIN_EMAIL / ADMIN_EMAIL)
+    if (envAdminEmail && normEmail === envAdminEmail) {
+      if (envAdminPassword && password !== envAdminPassword) {
         setErrorMsg('Incorrect administrator password.');
         return false;
       }
+
+      const existingUser = users.find(u => u.email.toLowerCase() === normEmail);
+      if (existingUser) {
+        if (existingUser.isDeactivated) {
+          setErrorMsg('This administrator account has been deactivated.');
+          return false;
+        }
+        if (existingUser.role !== 'admin') {
+          existingUser.role = 'admin';
+        }
+        setCurrentUser(existingUser);
+        setSuccessMsg(`Welcome back, ${existingUser.name}!`);
+        return true;
+      }
+
+      // Auto-create dynamically from Vercel env configuration
+      const newAdmin: User = {
+        id: 'usr_admin',
+        name: 'Administrator',
+        email: normEmail,
+        phone: '+2348000000000',
+        password: password,
+        referralCode: 'ADMIN_PROD',
+        walletBalance: 0,
+        kycStatus: 'verified',
+        role: 'admin',
+        createdAt: new Date().toISOString()
+      };
+      setUsers(prev => [newAdmin, ...prev.filter(u => u.email.toLowerCase() !== normEmail)]);
+      syncUserToSupabase(newAdmin);
+      setCurrentUser(newAdmin);
+      setSuccessMsg('Logged in successfully as Administrator.');
+      return true;
     }
 
-    const user = users.find(u => u.email.toLowerCase() === normEmail);
+    // 2. Managed via Supabase Database (or local state synced from Supabase)
+    let user = users.find(u => u.email.toLowerCase() === normEmail);
+
+    // If user not in local memory, query Supabase database directly in real-time
+    if (!user && isSupabaseConfigured()) {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data, error } = await client
+            .from('users')
+            .select('*')
+            .eq('email', normEmail)
+            .maybeSingle();
+
+          if (!error && data) {
+            user = data as User;
+            setUsers(prev => [...prev.filter(u => u.id !== (data as any).id), data as User]);
+          }
+        } catch (err) {
+          console.warn('Real-time Supabase user fetch error:', err);
+        }
+      }
+    }
+
     if (user) {
       if (user.isDeactivated) {
         setErrorMsg('This account has been deactivated. Please contact support or the administrator.');
@@ -730,25 +794,7 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return true;
     }
 
-    // Fallback: If it's the admin but they aren't seeded in the current state list yet
-    if (normEmail === ADMIN_EMAIL.toLowerCase().trim()) {
-      const newAdmin: User = {
-        id: 'usr_admin',
-        name: 'Treasure Homes Admin',
-        email: normEmail,
-        referralCode: 'TREASURE_ADMIN',
-        walletBalance: 0,
-        kycStatus: 'verified',
-        role: 'admin',
-        createdAt: new Date().toISOString()
-      };
-      setUsers(prev => [newAdmin, ...prev.filter(u => u.id !== 'usr_admin')]);
-      setCurrentUser(newAdmin);
-      setSuccessMsg('Logged in successfully as Treasure Homes Admin.');
-      return true;
-    }
-
-    setErrorMsg('No account found with this email address. Please register a new account.');
+    setErrorMsg('No account found with this email address. Please register a new account or configure in Supabase.');
     return false;
   };
 
@@ -762,7 +808,8 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return { success: false, message: 'Please enter your registered email address.' };
     }
 
-    const user = users.find(u => u.email.toLowerCase() === normEmail) || (normEmail === ADMIN_EMAIL.toLowerCase().trim() ? { email: ADMIN_EMAIL, name: 'Treasure Homes Admin' } : null);
+    const envAdmin = getEnvAdminEmail();
+    const user = users.find(u => u.email.toLowerCase() === normEmail) || (envAdmin && normEmail === envAdmin ? { email: envAdmin, name: 'Administrator' } : null);
 
     if (!user) {
       setErrorMsg(`No account found matching email "${normEmail}".`);

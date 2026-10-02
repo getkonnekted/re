@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { StateProvider, useAppState, ADMIN_EMAIL } from './context/StateContext';
+import { StateProvider, useAppState } from './context/StateContext';
 import { BrandingHeader, LegalDisclosures } from './components/BrandingHeader';
 import { UserDashboard } from './components/UserDashboard';
 import { MarketerDashboard } from './components/MarketerDashboard';
@@ -137,9 +137,9 @@ function MainAppContent() {
     }
   }, []);
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    login(loginEmail, loginPassword);
+    await login(loginEmail, loginPassword);
   };
 
   const handleRegisterSubmit = (e: React.FormEvent) => {
