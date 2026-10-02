@@ -1,0 +1,8 @@
+{
+  "name": "rePM Invest",
+  "description": "High-yield investment platform operating under Treasure Homes, featuring structured plans, automated referral tracking, and an admin control system.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
